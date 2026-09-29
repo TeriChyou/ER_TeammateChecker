@@ -34,7 +34,7 @@ class Hotkeys:
         ready.wait()
         if not self.ids:
             return '快捷鍵被占用或無法註冊，請使用視窗按鈕。'
-        return 'Ctrl+Alt+E 顯示／隱藏；Ctrl+Alt+Q 查詢目前輸入。'
+        return 'Ctrl+Alt+E 顯示／隱藏；Ctrl+Alt+Q 截圖辨識隊友。'
 
     def run(self, ready):
         # Tk consumes its own thread's messages. Keep WM_HOTKEY on a dedicated

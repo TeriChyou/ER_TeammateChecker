@@ -8,6 +8,7 @@ from er_checker.hotkeys import Hotkeys
 root = tk.Tk()
 root.withdraw()
 app = App(root, demo=True)
+app.provider.set('官方 API')
 app.names.set('')
 app.lookup()
 assert not app.busy
@@ -28,6 +29,37 @@ for tab in app.tabs.tabs():
     table_frame = frame.winfo_children()[-1]
     tree = next(child for child in table_frame.winfo_children() if child.winfo_class() == 'Treeview')
     assert len(tree.get_children()) == 20
+app.close()
+# OCR event routing: confidence gating, candidate selection, and cancellation.
+from PIL import Image
+from er_checker.ocr import Candidate
+from unittest.mock import Mock
+root = tk.Tk()
+root.withdraw()
+app = App(root, demo=True)
+app.provider.set('官方 API')
+app.update_provider()
+root.update()
+assert app.api_row.winfo_manager() == 'pack'
+app.provider.set('DAK.GG（免 Key）')
+app.update_provider()
+assert not app.api_row.winfo_manager()
+app.ocr.worker = Mock()
+app.lookup = Mock()
+app.ocr.reserve()
+app.ocr.start_ocr([Image.new('RGB', (200, 40)), Image.new('RGB', (200, 40))])
+assert app.names.get() == ''
+app.ocr.complete([[Candidate('甲', 40, '繁中'), Candidate('乙', 30, '繁中')], [Candidate('페이블', 97, '韓')]])
+app.lookup.assert_not_called()
+app.ocr.boxes[0].current(1)
+app.ocr.choose()
+assert app.names.get() == '乙, 페이블'
+app.ocr.complete([[Candidate('백수', 97, '韓')], [Candidate('페이블', 97, '韓')]])
+app.lookup.assert_called_once()
+app.lookup.reset_mock()
+app.cancel.set()
+app.ocr.complete([[Candidate('백수', 97, '韓')], [Candidate('페이블', 97, '韓')]])
+app.lookup.assert_not_called()
 app.close()
 hotkeys = Hotkeys()
 message = hotkeys.enable()
