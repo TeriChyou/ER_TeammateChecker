@@ -9,6 +9,7 @@ from .api import ApiError, Client, dak_url, demo_result, parse_names, summary
 from .hotkeys import Hotkeys
 from .ocr_panel import OcrPanel
 from .capture import enable_dpi_awareness
+from .stat_table import CharacterTable
 
 
 class App:
@@ -216,11 +217,32 @@ class App:
         chars = '、'.join(f"{c['name']} {c['games']}（{c['winRate']}）" for c in result['characters'][:3]) or '網站未提供'
         ttk.Label(frame, text='常用角色：' + chars, wraplength=860).pack(anchor='w', pady=4)
         ttk.Label(frame, text=f"DAK.GG · {result['updated']} · 本機讀取 {result['fetched']}" + ('（兩分鐘內快取）' if result['cached'] else ''), foreground='#64748b').pack(anchor='w')
+        views = ttk.Notebook(frame)
+        views.pack(fill='both', expand=True, pady=(6, 0))
+        roles = ttk.Frame(views, padding=5)
+        recent = ttk.Frame(views, padding=5)
+        analysis = ttk.Frame(views, padding=5)
+        views.add(roles, text='角色統計／排序')
+        views.add(recent, text='近期對局')
+        views.add(analysis, text='近 20 場模式／組隊')
+        ttk.Label(roles, text='積分賽季角色統計 · 點欄名切換升／降冪；場均 RP＝累積 RP ÷ 場次（至少 3 場）。', wraplength=840).pack(anchor='w')
+        if result.get('character_warning'):
+            ttk.Label(roles, text=result['character_warning'], foreground='#b45309').pack(anchor='w')
+        CharacterTable(roles, result.get('character_stats', [])).pack(fill='both', expand=True, pady=(5, 0))
+        info = result.get('recent_analysis')
+        if info and not result.get('analysis_warning'):
+            count = info['count']
+            ttk.Label(analysis, text=f'全部模式最近 {count} 場（最多 20 場，以網站已載入資料為準）').pack(anchor='w', pady=4)
+            for label, amount in info['modes'].items():
+                ttk.Label(analysis, text=f'{label}：{amount} 場（{amount / count:.0%}）').pack(anchor='w', pady=2)
+            ttk.Label(analysis, text='組隊分析：' + info['premade'], wraplength=830).pack(anchor='w', pady=(12, 4))
+        else:
+            ttk.Label(analysis, text=result.get('analysis_warning') or '未取得全部模式資料。').pack(anchor='w')
         mode = '積分' if result['mode'] == 3 else '一般'
-        ttk.Label(frame, text=f"近期 {mode}：讀到 {len(result['games'])} 場；下方 TK 是隊伍擊殺，不是死亡次數。").pack(anchor='w', pady=(8, 4))
+        ttk.Label(recent, text=f"近期 {mode}：讀到 {len(result['games'])} 場；TK 是隊伍擊殺，不是死亡次數。").pack(anchor='w', pady=(0, 4))
         if result.get('warning'):
-            ttk.Label(frame, text=result['warning'], foreground='#b45309', wraplength=860).pack(anchor='w')
-        area = ttk.Frame(frame)
+            ttk.Label(recent, text=result['warning'], foreground='#b45309', wraplength=860).pack(anchor='w')
+        area = ttk.Frame(recent)
         area.pack(fill='both', expand=True)
         columns = ('placement', 'character', 'team_kills', 'kills', 'assists', 'damage', 'time')
         tree = ttk.Treeview(area, columns=columns, show='headings', height=6)

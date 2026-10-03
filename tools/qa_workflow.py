@@ -54,7 +54,8 @@ for tab in app.tabs.tabs():
             yield from trees(child)
     found = list(trees(frame))
     assert found, [child.cget('text') for child in frame.winfo_children() if child.winfo_class() == 'TLabel']
-    rows.append(len(found[0].get_children()))
+    matches = next(tree for tree in found if 'placement' in tree['columns'] or 'id' in tree['columns'])
+    rows.append(len(matches.get_children()))
     assert rows[-1] > 0
 panel.destroy()
 app.tabs.select(app.tabs.tabs()[0])

@@ -6,10 +6,11 @@ from pathlib import Path
 import re
 import time
 import unicodedata
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from urllib.request import Request, urlopen
 from urllib.robotparser import RobotFileParser
 from .api import ApiError, dak_url
+from .analytics import character_stats, recent_analysis
 
 SCRIPT = Path(__file__).with_name('dak_dom.js').read_text(encoding='utf-8')
 CACHE = OrderedDict()
@@ -28,12 +29,16 @@ def same_name(left, right):
     return unicodedata.normalize('NFC', left).casefold() == unicodedata.normalize('NFC', right).casefold()
 
 
-def parse_snapshot(snapshot, requested, mode):
+def validate_snapshot(snapshot, requested):
     body = snapshot.get('body', '')
     if re.search(r'verify you are human|just a moment|access denied|checking your browser|captcha', body, re.I):
         raise ApiError('DAK.GG 要求驗證或拒絕自動存取，請按「開啟網頁」自行查看。')
     if not same_name(snapshot.get('name', ''), requested):
         raise ApiError('DAK.GG 找不到此名稱或回傳不同玩家，請從 OCR 候選選擇另一個名稱。')
+
+
+def parse_snapshot(snapshot, requested, mode):
+    validate_snapshot(snapshot, requested)
     values = snapshot.get('metrics', {})
     metrics = {key: next((values[label] for label in labels if label in values), '—') for key, labels in FIELDS.items()}
     games = []
@@ -98,6 +103,38 @@ class DakClient:
         if not self.robots.can_fetch('ER-TeammateChecker', url):
             raise ApiError('網站 robots.txt 不允許此頁面的自動查詢，請改用「開啟網頁」。')
 
+    def read_page(self, page, url, name, characters=False):
+        self.allowed(url)
+        self.check_cancel()
+        delay = max(0, 3 - (time.monotonic() - self.last_request))
+        if self.cancel:
+            self.cancel.wait(delay)
+        else:
+            time.sleep(delay)
+        self.check_cancel()
+        self.last_request = time.monotonic()
+        response = page.goto(url, wait_until='domcontentloaded', timeout=25000)
+        if response and response.status >= 400:
+            raise ApiError(f'DAK.GG 回傳 HTTP {response.status}，已停止查詢；請稍後再試／開啟網頁。')
+        if urlparse(page.url).hostname != 'dak.gg':
+            raise ApiError('DAK.GG 導向非預期網站，已停止查詢。')
+        expected_mode = parse_qs(urlparse(url).query).get('gameMode')
+        if (expected_mode and parse_qs(urlparse(page.url).query).get('gameMode') != expected_mode) or (characters and not urlparse(page.url).path.endswith('/character')):
+            raise ApiError('DAK.GG 導向不同模式或頁面，已停止查詢以避免混用資料。')
+        deadline = time.monotonic() + 20
+        snapshot = {}
+        while time.monotonic() < deadline:
+            self.check_cancel()
+            snapshot = page.evaluate(SCRIPT)
+            if re.search(r'verify you are human|just a moment|access denied|checking your browser|captcha', snapshot.get('body', ''), re.I):
+                raise ApiError('DAK.GG 要求驗證，請按「開啟網頁」自行查看。')
+            ready = snapshot.get('characters') if characters else snapshot.get('games') or snapshot.get('recentEmpty')
+            if ready and snapshot.get('name'):
+                break
+            page.wait_for_timeout(400)
+        validate_snapshot(snapshot, name)
+        return snapshot
+
     def lookup(self, name, mode=3, season=None):
         self.check_cancel()
         key = (name, mode)
@@ -110,13 +147,6 @@ class DakClient:
             from playwright.sync_api import sync_playwright, Error as BrowserError
         except ImportError:
             raise ApiError('缺少瀏覽器依賴，請先執行 setup.ps1。') from None
-        self.check_cancel()
-        if self.cancel:
-            self.cancel.wait(max(0, 3 - (time.monotonic() - self.last_request)))
-        else:
-            time.sleep(max(0, 3 - (time.monotonic() - self.last_request)))
-        self.check_cancel()
-        self.last_request = time.monotonic()
         context = None
         try:
             if self.runtime is None:
@@ -125,27 +155,15 @@ class DakClient:
                 self.browser = self.runtime.chromium.launch(channel='msedge', headless=True)
             context = self.browser.new_context(locale='zh-TW', viewport={'width': 1280, 'height': 900})
             page = context.new_page()
-            response = page.goto(url, wait_until='domcontentloaded', timeout=25000)
-            if response and response.status in (403, 429):
-                raise ApiError('DAK.GG 拒絕存取或限制流量，請稍後再試／開啟網頁。')
-            if response and response.status == 404:
-                raise ApiError('查無此玩家，請選擇另一個辨識候選名稱。')
-            if urlparse(page.url).hostname != 'dak.gg':
-                raise ApiError('DAK.GG 導向非預期網站，已停止查詢。')
-            deadline = time.monotonic() + 20
-            snapshot = {}
-            while time.monotonic() < deadline:
-                self.check_cancel()
-                snapshot = page.evaluate(SCRIPT)
-                body = snapshot.get('body', '')
-                if re.search(r'verify you are human|just a moment|access denied|captcha', body, re.I):
-                    raise ApiError('DAK.GG 要求驗證，請按「開啟網頁」自行查看。')
-                # Wait for match cards too; season stats alone can arrive earlier.
-                if snapshot.get('games') or snapshot.get('recentEmpty'):
-                    break
-                page.wait_for_timeout(400)
+            snapshot = self.read_page(page, url, name)
             result = parse_snapshot(snapshot, name, mode)
             result['url'] = url
+            details = self.read_page(page, dak_url(name) + '/character', name, characters=True)
+            result['character_stats'] = character_stats(details.get('characters', []))
+            result['character_warning'] = '' if result['character_stats'] else '角色明細未載入或網站無紀錄。'
+            all_modes = self.read_page(page, dak_url(name) + '?gameMode=ALL', name)
+            result['recent_analysis'] = recent_analysis(all_modes.get('games', []))
+            result['analysis_warning'] = '' if all_modes.get('games') or all_modes.get('recentEmpty') else '全部模式紀錄未載入，無法分析。'
             CACHE[key] = (time.monotonic(), result)
             CACHE.move_to_end(key)
             while len(CACHE) > 32:

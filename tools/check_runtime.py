@@ -1,4 +1,4 @@
-"""Explicit developer smoke checks; --live reads one public player page."""
+"""Explicit developer smoke checks; --live reads public pages for one player."""
 import argparse
 import json
 from pathlib import Path
@@ -30,6 +30,9 @@ if args.live:
     print(json.dumps(result, ensure_ascii=False, indent=2))
     assert result['metrics']['win_rate'] != '—'
     assert result['games'], 'No live match cards parsed'
+    assert result['character_stats'], 'No live character details parsed'
+    assert result['recent_analysis']['count'] > 0, 'No all-mode match cards parsed'
+    assert all(c['average_rp'] is None for c in result['character_stats'] if c['games'] is not None and c['games'] < 3)
     if args.normal:
         with DakClient() as client:
             normal = client.lookup('페이블', mode=2)

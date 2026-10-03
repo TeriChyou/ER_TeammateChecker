@@ -2,7 +2,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from er_checker.api import ApiError
 from er_checker.ocr import parse_tsv, normalize_name, Candidate, confident_choice
 from er_checker.capture import valid_regions, load_regions, save_regions
@@ -43,6 +43,31 @@ class OcrAndCaptureTests(unittest.TestCase):
 
 
 class DakTests(unittest.TestCase):
+    def test_additional_pages_validate_access_identity_and_scope(self):
+        client = DakClient()
+        client.allowed = Mock()
+        url = 'https://dak.gg/er/players/test?gameMode=ALL'
+        page = Mock(url=url)
+        page.goto.return_value.status = 200
+        page.evaluate.return_value = {'name': 'test', 'games': [{'mode': '一般'}]}
+        with patch('er_checker.dak.time.sleep'):
+            self.assertEqual(client.read_page(page, url, 'test')['games'][0]['mode'], '一般')
+            client.allowed.assert_called_with(url)
+            for code in (403, 429, 500):
+                page.goto.return_value.status = code
+                with self.assertRaises(ApiError):
+                    client.read_page(page, url, 'test')
+            page.goto.return_value.status = 200
+            for snapshot_value in ({'name': 'other', 'games': [{}]}, {'body': 'captcha'}):
+                page.evaluate.return_value = snapshot_value
+                with self.assertRaises(ApiError):
+                    client.read_page(page, url, 'test')
+            page.url = url.replace('ALL', 'RANK')
+            with self.assertRaises(ApiError):
+                client.read_page(page, url, 'test')
+            with self.assertRaises(ApiError):
+                client.read_page(page, 'https://dak.gg/er/players/test/character', 'test', characters=True)
+
     def test_tk_is_not_deaths(self):
         result = parse_snapshot(snapshot(), '페이블', 3)
         game = result['games'][0]

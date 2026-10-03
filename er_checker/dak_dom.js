@@ -10,17 +10,21 @@
   const rank = document.querySelector('b.rp');
   const rankSection = rank?.closest('section');
   const rows = [...document.querySelectorAll('tbody tr')].filter(row => row.querySelector('td.character'));
-  const characters = rows.slice(0, 5).map(row => ({
+  const characters = rows.map(row => ({
     name: text(row.querySelector('.character-name')),
     games: text(row.querySelector('.plays')),
-    winRate: text(row.querySelector('.win-rate')),
-    kills: text(row.querySelector('.avg-kill')),
-    damage: text(row.querySelector('.avg-damage'))
+    winRate: text(row.querySelector('.win-rate, .win')),
+    rp: text(row.querySelector('td.rp')),
+    rpDirection: row.querySelector('td.rp img')?.getAttribute('alt') || '',
+    kills: text(row.querySelector('td.kill, .avg-kill .kill .value')),
+    damage: text(row.querySelector('.avg-damage, td.damage'))
   }));
-  const games = [...document.querySelectorAll('.play-stat')].slice(0, 20).map(el => {
-    const card = el.closest('.content');
-    return {header: text(card?.firstElementChild), character: text(card?.querySelector('.character-name')),
-      combat: text(el.querySelector('.stat')), combatLabel: text(el.querySelector('.label')),
+  const cards = [...new Set([...document.querySelectorAll('.content .game-mode')].map(el => el.closest('.content')))];
+  const games = cards.slice(0, 20).map(card => {
+    const el = card.querySelector('.play-stat');
+    return {header: text(card?.firstElementChild), mode: text(card?.querySelector('.game-mode')),
+      character: text(card?.querySelector('.character-name')),
+      combat: text(el?.querySelector('.stat')), combatLabel: text(el?.querySelector('.label')),
       damage: text(card?.querySelector('.damage .value'))};
   });
   const body = document.body.innerText;

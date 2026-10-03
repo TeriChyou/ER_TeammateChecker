@@ -36,6 +36,10 @@ python tools/setup_runtime.py
 
 - 預設 **DAK.GG**，不用登入 API Portal。
 - 上方為網站預設賽季的**積分摘要**：RP、勝率、場次、平均擊殺／助攻／傷害、常用角色。
+- 「角色統計／排序」讀取完整角色明細，列出場次、累積 RP、場均 RP、勝率、平均擊殺與傷害。**場均 RP＝該角色累積 RP ÷ 場次，至少 3 場才顯示**；不足樣本或缺資料置於排序末尾。RP 保留正負號。
+- 點角色表格的任一欄名切換升／降冪：依場次找最常玩、依累積 RP 找加分最多、依場均 RP 比較每場表現；箭頭表示目前方向。預設依場次由多到少，排序不會跨玩家混合。
+- 「近 20 場模式／組隊」另讀**全部模式**的最新最多 20 場，顯示各模式場次與比例；不足 20 場按實際筆數計算，與目前選擇的積分／一般篩選分開。
+- **多排目前無法可靠判定**：查核到的公開頁面沒有可驗證的單／雙／三排標記。同隊次數不能證明預組隊，`T 2` 的滑鼠提示為 `TERMINATE 2`，也不是雙排。本工具不將缺少標記當作單排。
 - 積分／一般切換的是**下方近期對局**；不把積分賽季摘要當成一般模式統計。
 - 最多顯示當次網站載入的 20 場：名次、角色、TK、擊殺、助攻、傷害、時間。**TK 是隊伍擊殺，不是死亡次數。**
 - 顯示網站更新時間、本機讀取時間；網站資料可能延遲，賽季名稱取不到時明示。
@@ -48,7 +52,7 @@ python tools/setup_runtime.py
 
 原型的 OCR **不是百分之百準確**。遊戲字型、特殊符號、描邊、縮放、動畫、背景與 I/l/1 可能造成錯字。分數為 OCR 參考值，不是正確率。每個名稱輪流比較五個語言模型及兩種影像處理結果；不依賴 Windows 輸入法。候選第一名分數至少 75 且比第二名高至少 8 才自動查詢；你可關閉自動查詢。沒有候選正確時需重框，不會大量查詢所有候選。
 
-DAK.GG 使用 Playwright 啟動**獨立 headless Edge**，只讀公開玩家頁的已渲染 DOM，不使用使用者登入設定、不呼叫未公開 API。玩家導航間隔至少 3 秒，同玩家／模式在記憶體快取 120 秒（最多 32 組），不主動按網站更新按鈕。
+DAK.GG 使用 Playwright 啟動**獨立 headless Edge**，只讀公開玩家頁的已渲染 DOM，不使用使用者登入設定、不呼叫未公開 API。每位玩家讀取模式頁、角色明細頁及全部模式頁；每次導航間隔至少 3 秒，同玩家／模式在記憶體快取 120 秒（最多 32 組），不主動按網站更新按鈕。新增明細會增加首次查詢時間。
 
 查詢前檢查 robots.txt，不能讀取或不允許就停止。2026-09-29 查核時 `/er/search/players` 被禁止；本工具只使用 `/er/players/{nickname}`。robots.txt 不等於使用授權，網站規範仍可能變更。403、429、驗證頁、玩家不符、未載入或解析失敗會顯示錯誤／部分資料提示，保留「開啟網頁」供手動查看，不破解驗證、不無限重試。
 
@@ -67,6 +71,7 @@ DAK.GG 使用 Playwright 啟動**獨立 headless Edge**，只讀公開玩家頁�
 ```powershell
 ./.venv/Scripts/python.exe -m unittest discover -s tests -v
 ./.venv/Scripts/python.exe -c "import runpy; runpy.run_path('tests/gui_smoke.py')"
+./.venv/Scripts/python.exe -c "import runpy; runpy.run_path('tests/gui_analytics_smoke.py')"
 ./.venv/Scripts/python.exe tools/check_runtime.py
 # 以下會讀取少量真實公開戰績：
 ./.venv/Scripts/python.exe tools/check_runtime.py --live --normal
